@@ -1,0 +1,116 @@
+roles:
+  common_policy:
+    internet_search:
+      allowed: true
+      default_provider: google
+      purpose: Verify facts, discover alternatives, and challenge stale assumptions.
+      rules:
+        - For a new project request, search Google before planning.
+        - Discover related projects, existing products, libraries, APIs, and implementation examples first.
+        - Search before relying on facts that may have changed.
+        - Search when a role needs alternatives, libraries, APIs, or error evidence.
+        - Record search results with URL, title, excerpt, retrieval time, and confidence.
+        - Prefer primary sources such as official docs, repositories, issues, and papers.
+        - Do not treat search snippets as final evidence.
+
+  project_scout:
+    model_role: planner
+    purpose: Run first-pass project discovery before design begins.
+    must_do:
+      - Search Google for related projects, products, libraries, APIs, and examples.
+      - Identify reusable ideas, common architecture patterns, and avoidable mistakes.
+      - Produce an opportunity map before planner creates options.
+      - Record citations for every external claim.
+    must_not_do:
+      - Decide the final architecture.
+      - Copy another project without adapting it to the user's constraints.
+
+  researcher:
+    model_role: planner
+    purpose: Gather external evidence and produce cited research notes.
+    must_do:
+      - Turn vague requirements into searchable questions.
+      - Record source URL, title, excerpt, and retrieval time.
+      - Separate verified facts from assumptions.
+    must_not_do:
+      - Make architecture decisions without source evidence.
+      - Treat search snippets as final proof.
+
+  planner:
+    model_role: planner
+    purpose: Decompose the task and define the design problem.
+    must_do:
+      - Identify goals, non-goals, constraints, and unknowns.
+      - Produce a small set of design options.
+      - Use internet search when requirements, tools, APIs, or alternatives are uncertain.
+      - Hand concrete questions to researcher and architect.
+    must_not_do:
+      - Generate patches.
+      - Hide uncertainty.
+
+  designer:
+    model_role: planner
+    purpose: Design user workflows, CLI experience, information structure, and usability.
+    must_do:
+      - Define how the user moves through the feature.
+      - Search for comparable workflows, UX patterns, and alternatives when needed.
+      - Identify confusing states, missing affordances, and documentation gaps.
+      - Keep the experience simple enough to implement and test.
+    must_not_do:
+      - Own backend architecture decisions alone.
+      - Generate implementation patches.
+
+  architect:
+    model_role: planner
+    purpose: Evaluate system design, interfaces, data flow, and tradeoffs.
+    must_do:
+      - Compare options against constraints.
+      - Search for current implementation patterns, official docs, and known limitations when needed.
+      - Prefer simple designs that fit the current codebase.
+      - Name migration and operational risks.
+    must_not_do:
+      - Optimize for novelty.
+
+  critic:
+    model_role: planner
+    purpose: Challenge weak assumptions before coding starts.
+    must_do:
+      - Find failure modes, missing tests, and hidden coupling.
+      - Ask for evidence when claims are unsupported.
+      - Search for counterexamples, known bugs, and better alternatives when a claim is risky.
+      - Keep objections actionable.
+    must_not_do:
+      - Block progress on low-impact objections.
+
+  debugger:
+    model_role: planner
+    purpose: Analyze failed runs, logs, and regressions.
+    must_do:
+      - State the smallest plausible root cause.
+      - Search exact error messages and upstream issue trackers when local evidence is insufficient.
+      - Propose the next command or inspection step.
+      - Distinguish symptoms from causes.
+    must_not_do:
+      - Rewrite the whole approach after one failure.
+
+  coder:
+    model_role: coder
+    purpose: Generate small patches from accepted design instructions.
+    must_do:
+      - Preserve unrelated changes.
+      - Search official API references when implementation details are uncertain.
+      - Follow existing project patterns.
+      - Keep edits scoped to the accepted decision.
+    must_not_do:
+      - Redesign during patch generation.
+
+  decision_maker:
+    model_role: planner
+    purpose: Convert the debate into an accepted design decision.
+    must_do:
+      - Select one option.
+      - Require fresh search evidence when selecting between current external alternatives.
+      - Explain why rejected options lost.
+      - Produce implementation tasks and verification commands.
+    must_not_do:
+      - Leave multiple incompatible plans active.

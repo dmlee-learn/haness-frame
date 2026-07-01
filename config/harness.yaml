@@ -1,0 +1,77 @@
+version: 1
+
+project:
+  name: haness-frame
+  workspace_root: .
+
+models:
+  planner:
+    provider: openai_compatible
+    base_url: http://127.0.0.1:8000/v1
+    model: nvidia/NVIDIA-Nemotron-Nano-9B-v2
+    role: plan_review_summarize
+    context_tokens: 12288
+    max_output_tokens: 2048
+    temperature: 0.2
+    notes:
+      - Primary planner/reviewer candidate.
+      - Requires vLLM trust_remote_code and Nemotron-specific runtime options.
+      - Start at 8192 or 12288 context on 16GB VRAM.
+      - Do not generate final patches with this role.
+
+  alternate_planner:
+    provider: ollama
+    base_url: http://127.0.0.1:11434
+    model: qwen3.5:35b
+    role: plan_review_summarize_backup
+    context_tokens: 32768
+    max_output_tokens: 2048
+    temperature: 0.2
+    notes:
+      - Backup planner if Nemotron Nano 9B v2 is unavailable.
+      - Q2_K/Q2_K-compatible quantization is acceptable for planning only.
+      - Do not generate final patches with this role.
+
+  coder:
+    provider: openai_compatible
+    base_url: http://127.0.0.1:8000/v1
+    model: Qwen/Qwen2.5-Coder-14B-Instruct-AWQ
+    role: patch_generation
+    context_tokens: 12288
+    max_output_tokens: 2048
+    temperature: 0.1
+    notes:
+      - Use for concrete code edits and test-failure fixes.
+      - Keep patches small and scoped.
+
+  fallback:
+    provider: openai_compatible
+    base_url: http://127.0.0.1:8000/v1
+    model: Qwen/Qwen3-8B-AWQ
+    role: fast_tool_call_and_light_tasks
+    context_tokens: 20000
+    max_output_tokens: 2048
+    temperature: 0.1
+
+  escalation:
+    provider: gemini
+    model: gemini
+    role: hard_design_review
+    trigger_after_failed_attempts: 3
+
+policy:
+  max_local_retries: 2
+  require_tests_after_patch: true
+  prefer_small_patches: true
+  planner_may_edit_files: false
+  coder_may_edit_files: true
+  summarize_before_cloud_escalation: true
+
+loop:
+  - planner_selects_scope
+  - harness_collects_relevant_files
+  - coder_generates_patch
+  - harness_runs_tests
+  - coder_repairs_once_or_twice
+  - planner_reviews_repeated_failures
+  - escalate_if_needed

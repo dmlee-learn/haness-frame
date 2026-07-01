@@ -1,0 +1,85 @@
+design_loop:
+  objective: Role-based design discussion with internet research evidence.
+
+  search_result_schema:
+    query: string
+    provider: google|official_site|github|paper|other
+    url: string
+    title: string
+    excerpt: string
+    retrieved_at: iso8601
+    confidence: low|medium|high
+
+  search_policy:
+    all_roles_can_search: true
+    default_provider: google
+    project_start_requires_google_discovery: true
+    project_discovery_queries:
+      - "<project idea> existing projects"
+      - "<project idea> open source github"
+      - "<project idea> alternatives"
+      - "<project idea> architecture"
+      - "<project idea> common problems"
+    use_google_when:
+      - A new project is proposed.
+      - The role needs alternatives.
+      - The claim may be outdated.
+      - Official documentation location is unknown.
+      - Exact error messages or model/runtime limitations need investigation.
+    prefer_sources:
+      - official_docs
+      - source_repositories
+      - release_notes
+      - issue_trackers
+      - papers
+    require_citations_for:
+      - external_tools
+      - model_capabilities
+      - APIs
+      - installation_steps
+      - performance_or_context_claims
+
+  stages:
+    - id: project_discovery
+      owner: project_scout
+      output: related_projects, alternatives, useful_patterns, risks_to_avoid
+
+    - id: intake
+      owner: planner
+      output: goals, non_goals, constraints, unknowns, discovery_summary
+
+    - id: research_questions
+      owner: all_roles
+      output: role_specific_search_queries
+
+    - id: internet_research
+      owner: all_roles
+      output: cited_findings_and_alternatives
+
+    - id: proposal
+      owner: planner
+      output: design_options
+
+    - id: experience_design
+      owner: designer
+      output: user_flow, information_structure, usability_risks
+
+    - id: architecture_review
+      owner: architect
+      output: tradeoff_matrix
+
+    - id: adversarial_review
+      owner: critic
+      output: risks_and_required_changes
+
+    - id: debate_round
+      owner: planner
+      output: resolved_points, unresolved_points
+
+    - id: decision
+      owner: decision_maker
+      output: accepted_design_decision
+
+    - id: implementation_brief
+      owner: coder
+      output: patch_instructions, test_commands
