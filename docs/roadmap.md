@@ -37,6 +37,12 @@ Implemented:
 4. Scorecard updates
 5. Execution logs
 
+Current partial implementation:
+
+- Project-local `invoke` command
+- Sequential `pipeline` command with per-role saved outputs
+- Fallback execution for dead role services
+
 ## Phase 3 Priority
 
 1. Retry and timeout policy
@@ -65,4 +71,3 @@ Implemented:
 
 Do not expand the orchestration layer until Phase 1 can actually call a model
 using the project-local service snapshot.
-

@@ -239,15 +239,18 @@ def roles_for_service(service: sqlite3.Row) -> list[str]:
 
 
 def choose_service_for_role(role: str, services: list[sqlite3.Row]) -> sqlite3.Row | None:
-    enabled_matches = [service for service in services if service["enabled"] and role in roles_for_service(service)]
-    if enabled_matches:
-        return enabled_matches[0]
-    matches = [service for service in services if role in roles_for_service(service)]
-    if matches:
-        return matches[0]
+    enabled_exact = [service for service in services if service["enabled"] and role in roles_for_service(service)]
+    if enabled_exact:
+        return enabled_exact[0]
+    enabled_fallback = [service for service in services if service["enabled"] and "fallback" in roles_for_service(service)]
+    if enabled_fallback:
+        return enabled_fallback[0]
     enabled_services = [service for service in services if service["enabled"]]
     if enabled_services:
         return enabled_services[0]
+    exact_matches = [service for service in services if role in roles_for_service(service)]
+    if exact_matches:
+        return exact_matches[0]
     return services[0] if services else None
 
 

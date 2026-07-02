@@ -16,7 +16,7 @@ $working_description
 
 ## Priority 2
 
-1. Run the role pipeline in order.
+1. Run the role pipeline in order with saved outputs.
 2. Produce search evidence and discussion notes.
 3. Enforce the decision gate before coding.
 4. Update `workspace/scorecard.json`.

@@ -22,6 +22,7 @@ python app.py roles
 python app.py pack --role planner
 python app.py render
 python app.py invoke --role planner --prompt "Summarize the project state"
+python app.py pipeline --prompt "Draft a first-pass design plan"
 ```
 
 ## Workflow
