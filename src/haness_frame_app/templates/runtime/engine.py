@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import datetime as dt
-import json
 from pathlib import Path
 
-from .evidence import decision_references_evidence, evidence_status, evidence_summary
+from .evidence import decision_references_evidence, evidence_gap_counts, evidence_status, evidence_summary, load_evidence
 from .roles import ROLE_ORDER, describe_role
 from .scorecard import mark_check, update_runtime_scorecard
 from .storage import ROOT, STATE_FILE, ensure_workspace, load_state, read_text, save_state, write_text
@@ -144,6 +143,33 @@ def status_report() -> str:
     lines.extend(["", "Decision gate:", f"- allowed: {gate['allowed']}"])
     if gate["issues"]:
         lines.extend(f"- {issue}" for issue in gate["issues"])
+    return "\n".join(lines)
+
+
+def summary_report() -> str:
+    state = bootstrap()
+    missing = missing_docs()
+    gate = decision_gate()
+    evidence_records = load_evidence()
+    gap_counts = evidence_gap_counts()
+    lines = [
+        "# Harness Summary",
+        "",
+        f"Status: {state.get('status', 'unknown')}",
+        f"Stage: {state.get('current_stage', 'unknown')}",
+        f"Next action: {next_action()}",
+        "",
+        f"Missing docs: {len(missing)}",
+        f"Evidence records: {len(evidence_records)}",
+        f"Planned searches: {gap_counts['planned']}",
+        f"Covered searches: {gap_counts['covered']}",
+        f"Evidence gaps: {gap_counts['missing']}",
+        f"Decision gate: {gate['allowed']}",
+    ]
+    if missing:
+        lines.extend(["", "Missing documents:"] + [f"- {item}" for item in missing])
+    if gate["issues"]:
+        lines.extend(["", "Gate issues:"] + [f"- {issue}" for issue in gate["issues"]])
     return "\n".join(lines)
 
 

@@ -16,6 +16,7 @@ EXTRA_MANIFEST_FILES = [
     "src/harness_app/decision.py",
 ]
 COMMAND_SNIPPETS = [
+    "python -m harness_app summary",
     "python -m harness_app search-plan",
     "python -m harness_app evidence-draft",
     "python -m harness_app evidence-gaps",

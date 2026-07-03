@@ -9,7 +9,7 @@ from .archive import create_archive
 from .audit import log_event, recent_events
 from .client import invoke
 from .decision import build_decision_record_draft, write_decision_record_draft
-from .engine import bootstrap, decision_gate, next_action, refresh_runtime_scorecard, render_role_packets, role_packet, status_report
+from .engine import bootstrap, decision_gate, next_action, refresh_runtime_scorecard, render_role_packets, role_packet, status_report, summary_report
 from .evidence import add_evidence, commit_evidence_draft, evidence_markdown, load_evidence, write_evidence_draft, write_evidence_gaps
 from .manifest import manifest_report
 from .roles import ROLE_ORDER
@@ -48,6 +48,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     status_parser = subparsers.add_parser("status", help="Print current harness status.")
     status_parser.set_defaults(func=lambda args: print(status_report()))
+
+    summary_parser = subparsers.add_parser("summary", help="Print a compact harness summary with counts.")
+    summary_parser.set_defaults(func=lambda args: print(summary_report()))
 
     roles_parser = subparsers.add_parser("roles", help="Print the role order.")
     roles_parser.set_defaults(func=lambda args: print("\n".join(ROLE_ORDER)))

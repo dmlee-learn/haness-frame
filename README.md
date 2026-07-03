@@ -34,6 +34,8 @@ docs/design-discussion-framework.md  Design discussion workflow
 docs/roadmap.md           Implementation priorities and phases
 docs/ko-test-project-manual.md       Korean test project manual
 docs/prompts.md            Prompt contracts per role
+localdoc/testing-process.en.md       Test workflow reference in English
+localdoc/testing-process.ko.md       Test workflow reference in Korean
 scripts/check-services.ps1 Windows/WSL service check
 scripts/start-vllm-*.ps1   Start planner/coder/fallback vLLM profiles
 src/haness_frame.py        Thin CLI entrypoint
@@ -249,6 +251,28 @@ projects/internal-business-system/
   workspace/manifest.json
   workspace/scorecard.json
   src/harness_app/
+```
+
+## Harness Runtime
+
+The generated project runtime now supports a full evidence-driven loop:
+
+```powershell
+python app.py summary
+python app.py search-plan
+python app.py evidence-draft
+python app.py evidence-gaps
+python app.py evidence-commit
+python app.py decision-draft
+python app.py verify
+```
+
+Use `summary` for a compact readiness view, `search-plan` to seed research work, and `verify` to check compileall, manifest integrity, and the decision gate.
+
+When the runtime templates change, sync existing generated projects:
+
+```powershell
+python scripts\sync_generated_projects.py
 ```
 
 Create a design session file:

@@ -409,6 +409,7 @@ This project includes a runnable harness engine package.
 python -m harness_app init
 python -m harness_app check
 python -m harness_app status
+python -m harness_app summary
 python -m harness_app roles
 python -m harness_app pack --role planner
 python -m harness_app render

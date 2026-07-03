@@ -135,6 +135,25 @@ def evidence_gap_markdown() -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def evidence_gap_counts() -> dict[str, int]:
+    plan = _load_search_plan()
+    searches = plan.get("searches", [])
+    records = _load_records()
+    if not isinstance(searches, list) or not searches:
+        return {"planned": 0, "covered": 0, "missing": 0}
+    known_queries = {str(item.get("query", "") or "").strip() for item in records}
+    known_urls = {str(item.get("url", "") or "").strip() for item in records}
+    covered = 0
+    for item in searches:
+        if not isinstance(item, dict):
+            continue
+        query = str(item.get("query", "")).strip()
+        url = str(item.get("url", "")).strip()
+        if query in known_queries or url in known_urls:
+            covered += 1
+    return {"planned": len(searches), "covered": covered, "missing": max(0, len(searches) - covered)}
+
+
 def write_evidence_gaps() -> str:
     return str(write_text(EVIDENCE_GAPS_MD, evidence_gap_markdown()))
 
