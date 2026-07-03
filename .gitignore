@@ -30,7 +30,7 @@ data/*.sqlite
 projects/
 
 # Generated documents and analysis (자동 생성 문서)
-localdoc/
+#localdoc/
 
 # Run output (실행 기록)
 runs/

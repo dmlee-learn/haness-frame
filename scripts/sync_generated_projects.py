@@ -23,6 +23,7 @@ COMMAND_SNIPPETS = [
     "python -m harness_app evidence-commit",
     "python -m harness_app decision-template",
     "python -m harness_app decision-draft",
+    "python -m harness_app verify",
 ]
 
 

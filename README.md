@@ -32,7 +32,8 @@ config/design_loop.yaml    Structured research/debate/decision stages
 docs/architecture.md       Harness design and loop
 docs/design-discussion-framework.md  Design discussion workflow
 docs/roadmap.md           Implementation priorities and phases
-docs/ko-test-project-manual.md       Korean test project manual
+docs/test-project-manual.en.md       Test project manual in English
+docs/test-project-manual.ko.md       Test project manual in Korean
 docs/prompts.md            Prompt contracts per role
 localdoc/testing-process.en.md       Test workflow reference in English
 localdoc/testing-process.ko.md       Test workflow reference in Korean
