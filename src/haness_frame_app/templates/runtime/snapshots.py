@@ -8,14 +8,14 @@ from pathlib import Path
 
 from .audit import log_event
 from .scorecard import mark_check
-from .storage import ROOT, WORKSPACE, ensure_workspace
+from .storage import ROOT, WORKSPACE, ensure_workspace, write_path_text
 
 INCLUDE_DIRS = ["context", "docs", "research", "prompts", "implementation", "workspace"]
 SKIP_DIR_NAMES = {"snapshots", "__pycache__"}
 
 
 def _stamp() -> str:
-    return dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+    return dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S%f")
 
 
 def _snapshot_root() -> Path:
@@ -31,6 +31,8 @@ def _copy_tree(source: Path, target: Path) -> None:
     for item in source.rglob("*"):
         rel = item.relative_to(source)
         if any(part in SKIP_DIR_NAMES for part in rel.parts):
+            continue
+        if item.is_symlink():
             continue
         destination = target / rel
         if item.is_dir():
@@ -57,7 +59,7 @@ def create_snapshot(label: str = "") -> dict[str, object]:
         "created_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "copied": copied,
     }
-    (root / "snapshot.json").write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
+    write_path_text(root / "snapshot.json", json.dumps(metadata, indent=2, ensure_ascii=False))
     mark_check("snapshot", True, name)
     log_event("snapshot.created", name=name, label=label)
     return metadata
@@ -90,18 +92,30 @@ def restore_snapshot(name: str) -> dict[str, object]:
     if not snapshot.exists() or not snapshot.is_dir():
         raise ValueError(f"snapshot not found: {name}")
     temp_root = Path(tempfile.mkdtemp(prefix="haness-restore-"))
-    shutil.copytree(snapshot, temp_root / "snapshot")
-    source_root = temp_root / "snapshot"
     restored: list[str] = []
-    for rel_dir in INCLUDE_DIRS:
-        source = source_root / rel_dir
-        if not source.exists():
-            continue
-        target = ROOT / rel_dir
-        if target.exists():
-            shutil.rmtree(target)
-        shutil.copytree(source, target)
-        restored.append(rel_dir)
+    try:
+        shutil.copytree(snapshot, temp_root / "snapshot")
+        source_root = temp_root / "snapshot"
+        preserved_snapshots = temp_root / "preserved-snapshots"
+        snapshots_root = _snapshot_root()
+        if snapshots_root.exists():
+            shutil.copytree(snapshots_root, preserved_snapshots)
+        for rel_dir in INCLUDE_DIRS:
+            source = source_root / rel_dir
+            if not source.exists():
+                continue
+            target = ROOT / rel_dir
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(source, target)
+            restored.append(rel_dir)
+        if preserved_snapshots.exists():
+            destination = WORKSPACE / "snapshots"
+            if destination.exists():
+                shutil.rmtree(destination)
+            shutil.copytree(preserved_snapshots, destination)
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)
     mark_check("rollback", True, name)
     log_event("snapshot.restored", name=name, restored=restored)
     return {"restored": restored, "name": name}

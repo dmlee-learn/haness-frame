@@ -4,9 +4,11 @@ import datetime as dt
 from pathlib import Path
 
 from .evidence import decision_references_evidence, evidence_gap_counts, evidence_status, evidence_summary, load_evidence
+from .claims import decision_claim_issues
+from .provenance import decision_snapshot_issues
 from .roles import ROLE_ORDER, describe_role
 from .scorecard import mark_check, update_runtime_scorecard
-from .storage import ROOT, STATE_FILE, ensure_workspace, load_state, read_text, save_state, write_text
+from .storage import ROOT, STATE_FILE, ensure_workspace, read_text, update_json_path, write_text
 
 REQUIRED_DOCS = [
     "context/business-context.md",
@@ -34,18 +36,22 @@ def _section_text(text: str, heading: str) -> str:
 
 def bootstrap() -> dict[str, object]:
     ensure_workspace()
-    state = load_state()
-    if not state:
-        state = {
-            "created_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-            "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-            "status": "bootstrap",
-            "current_stage": "context",
-            "notes": [],
-            "role_assignments": {},
-        }
-        save_state(state)
-    return state
+    def initialize(state: dict[str, object]) -> None:
+        if state:
+            return
+        now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+        state.update(
+            {
+                "created_at": now,
+                "updated_at": now,
+                "status": "bootstrap",
+                "current_stage": "context",
+                "notes": [],
+                "role_assignments": {},
+            }
+        )
+
+    return update_json_path(STATE_FILE, initialize)
 
 
 def missing_docs() -> list[str]:
@@ -87,6 +93,14 @@ def decision_gate() -> dict[str, object]:
         issues.append("Verification Commands are required")
     if not decision_references_evidence():
         issues.append("Decision Record must cite or summarize evidence")
+    try:
+        issues.extend(decision_claim_issues())
+    except ValueError as exc:
+        issues.append(str(exc))
+    try:
+        issues.extend(decision_snapshot_issues())
+    except ValueError as exc:
+        issues.append(str(exc))
     gate = {
         "allowed": not issues,
         "issues": issues,
@@ -217,12 +231,16 @@ Decision gate:
 
 
 def render_role_packets() -> list[Path]:
-    state = bootstrap()
+    bootstrap()
     outputs = []
     for role in ROLE_ORDER:
         path = write_text(f"workspace/packs/{role}.md", role_packet(role))
         outputs.append(path)
-    state["updated_at"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
-    save_state(state)
+    update_json_path(
+        STATE_FILE,
+        lambda state: state.update(
+            {"updated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")}
+        ),
+    )
     mark_check("render", True, f"{len(outputs)} role packet(s)")
     return outputs

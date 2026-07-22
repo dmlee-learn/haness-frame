@@ -7,8 +7,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .audit import log_event
+from .claims import claim_policy_report
+from .evidence_policy import evaluate_evidence_policy
 from .scorecard import mark_check
-from .storage import ensure_workspace, read_text, write_text
+from .storage import MUTATION_LOCK_TIMEOUT_SECONDS, ROOT, ensure_workspace, operation_lock, read_text, write_text
 
 EVIDENCE_JSON = "workspace/evidence/search-evidence.json"
 EVIDENCE_MD = "research/search-evidence.md"
@@ -26,6 +28,7 @@ REQUIRED_FIELDS = [
     "why_it_matters",
     "recommended_use",
 ]
+OPTIONAL_FIELDS = ["source_sha256", "source_bytes", "source_content_type"]
 
 
 def _now() -> str:
@@ -37,24 +40,61 @@ def _load_records() -> list[dict[str, str]]:
     payload = read_text(EVIDENCE_JSON, "[]")
     try:
         records = json.loads(payload)
-    except json.JSONDecodeError:
-        return []
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"{EVIDENCE_JSON} contains invalid JSON at line {exc.lineno}, column {exc.colno}"
+        ) from exc
     if not isinstance(records, list):
-        return []
-    return [item for item in records if isinstance(item, dict)]
+        raise ValueError(f"{EVIDENCE_JSON} root must be a JSON list")
+    invalid = [index for index, item in enumerate(records, start=1) if not isinstance(item, dict)]
+    if invalid:
+        raise ValueError(f"{EVIDENCE_JSON} contains non-object record(s): {invalid}")
+    return records
 
 
 def load_evidence() -> list[dict[str, str]]:
     return _load_records()
 
 
+def update_evidence_source(url: str, updates: dict[str, object]) -> dict[str, str]:
+    allowed = {"url", "title", "excerpt", "retrieved_at", *OPTIONAL_FIELDS}
+    unknown = sorted(set(updates) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported evidence source update field(s): {', '.join(unknown)}")
+    with operation_lock("evidence", "records", timeout=MUTATION_LOCK_TIMEOUT_SECONDS):
+        records = _load_records()
+        matches = [index for index, item in enumerate(records) if str(item.get("url", "")).strip() == url.strip()]
+        if len(matches) != 1:
+            raise ValueError(f"evidence source must match exactly one record: {url}")
+        index = matches[0]
+        updated = dict(records[index])
+        updated.update({name: str(value or "").strip() for name, value in updates.items()})
+        new_url = str(updated.get("url", "")).strip()
+        if any(
+            position != index and str(item.get("url", "")).strip() == new_url
+            for position, item in enumerate(records)
+        ):
+            raise ValueError(f"duplicate evidence url: {new_url}")
+        missing = [field for field in REQUIRED_FIELDS if not str(updated.get(field, "")).strip()]
+        if missing:
+            raise ValueError(f"updated evidence is missing fields: {', '.join(missing)}")
+        records[index] = updated
+        save_evidence(records)
+        log_event("evidence.source.updated", url=new_url, fields=sorted(updates))
+        return updated
+
+
 def _load_search_plan() -> dict[str, object]:
     payload = read_text(SEARCH_PLAN_JSON, "{}")
     try:
         plan = json.loads(payload)
-    except json.JSONDecodeError:
-        return {}
-    return plan if isinstance(plan, dict) else {}
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"{SEARCH_PLAN_JSON} contains invalid JSON at line {exc.lineno}, column {exc.colno}"
+        ) from exc
+    if not isinstance(plan, dict):
+        raise ValueError(f"{SEARCH_PLAN_JSON} root must be a JSON object")
+    return plan
 
 
 def evidence_draft_markdown() -> str:
@@ -197,8 +237,18 @@ def _parse_evidence_draft(text: str) -> list[dict[str, str]]:
 
 
 def commit_evidence_draft(path: str = EVIDENCE_DRAFT_MD) -> dict[str, object]:
+    with operation_lock("evidence", "records", timeout=MUTATION_LOCK_TIMEOUT_SECONDS):
+        return _commit_evidence_draft_unlocked(path)
+
+
+def _commit_evidence_draft_unlocked(path: str) -> dict[str, object]:
     draft_path = Path(path)
-    if not draft_path.exists():
+    draft_path = (draft_path if draft_path.is_absolute() else ROOT / draft_path).resolve(strict=False)
+    try:
+        draft_path.relative_to(ROOT.resolve())
+    except ValueError as exc:
+        raise ValueError("evidence draft must be inside the project") from exc
+    if not draft_path.is_file():
         raise ValueError(f"evidence draft not found: {path}")
     entries = _parse_evidence_draft(draft_path.read_text(encoding="utf-8"))
     if not entries:
@@ -227,9 +277,24 @@ def commit_evidence_draft(path: str = EVIDENCE_DRAFT_MD) -> dict[str, object]:
 def save_evidence(records: list[dict[str, str]]) -> None:
     cleaned = []
     for record in records:
-        cleaned.append({field: str(record.get(field, "") or "").strip() for field in REQUIRED_FIELDS})
+        item = {field: str(record.get(field, "") or "").strip() for field in REQUIRED_FIELDS}
+        item.update(
+            {
+                field: str(record.get(field, "") or "").strip()
+                for field in OPTIONAL_FIELDS
+                if str(record.get(field, "") or "").strip()
+            }
+        )
+        cleaned.append(item)
     write_text(EVIDENCE_JSON, json.dumps(cleaned, indent=2, ensure_ascii=False))
-    write_text(EVIDENCE_MD, evidence_markdown(cleaned))
+    try:
+        write_text(EVIDENCE_MD, evidence_markdown(cleaned))
+    except OSError as exc:
+        log_event("evidence.markdown.rebuild_failed", record_count=len(cleaned), error=type(exc).__name__)
+        raise RuntimeError(
+            "structured evidence was saved but its Markdown view could not be rebuilt; "
+            "run `python app.py evidence-rebuild`"
+        ) from exc
 
 
 def add_evidence(
@@ -242,6 +307,40 @@ def add_evidence(
     why_it_matters: str,
     recommended_use: str,
     retrieved_at: str = "",
+    source_sha256: str = "",
+    source_bytes: int | str = "",
+    source_content_type: str = "",
+) -> dict[str, str]:
+    with operation_lock("evidence", "records", timeout=MUTATION_LOCK_TIMEOUT_SECONDS):
+        return _add_evidence_unlocked(
+            query,
+            provider,
+            url,
+            title,
+            excerpt,
+            confidence,
+            why_it_matters,
+            recommended_use,
+            retrieved_at,
+            source_sha256,
+            source_bytes,
+            source_content_type,
+        )
+
+
+def _add_evidence_unlocked(
+    query: str,
+    provider: str,
+    url: str,
+    title: str,
+    excerpt: str,
+    confidence: str,
+    why_it_matters: str,
+    recommended_use: str,
+    retrieved_at: str,
+    source_sha256: str = "",
+    source_bytes: int | str = "",
+    source_content_type: str = "",
 ) -> dict[str, str]:
     record = {
         "query": query.strip(),
@@ -254,6 +353,12 @@ def add_evidence(
         "why_it_matters": why_it_matters.strip(),
         "recommended_use": recommended_use.strip(),
     }
+    optional = {
+        "source_sha256": str(source_sha256 or "").strip().lower(),
+        "source_bytes": str(source_bytes or "").strip(),
+        "source_content_type": source_content_type.strip().lower(),
+    }
+    record.update({name: value for name, value in optional.items() if value})
     missing = [field for field in REQUIRED_FIELDS if not record.get(field)]
     if missing:
         raise ValueError(f"missing evidence fields: {', '.join(missing)}")
@@ -286,6 +391,11 @@ def evidence_markdown(records: list[dict[str, str]] | None = None) -> str:
                 f"- retrieved_at: {record.get('retrieved_at', '')}",
                 f"- confidence: {record.get('confidence', '')}",
                 f"- recommended_use: {record.get('recommended_use', '')}",
+                *(
+                    [f"- source_sha256: {record.get('source_sha256', '')}"]
+                    if record.get("source_sha256")
+                    else []
+                ),
                 "",
                 record.get("excerpt", ""),
                 "",
@@ -296,6 +406,30 @@ def evidence_markdown(records: list[dict[str, str]] | None = None) -> str:
             ]
         )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def evidence_derivative_report(records: list[dict[str, str]] | None = None) -> dict[str, object]:
+    source_records = _load_records() if records is None else records
+    path = ROOT / EVIDENCE_MD
+    if not path.exists():
+        return {"valid": True, "status": "missing", "issues": [], "path": EVIDENCE_MD}
+    expected = evidence_markdown(source_records)
+    matches = path.read_text(encoding="utf-8", errors="replace") == expected
+    issues = [] if matches else [f"{EVIDENCE_MD} is stale; run `python app.py evidence-rebuild`"]
+    return {
+        "valid": matches,
+        "status": "current" if matches else "stale",
+        "issues": issues,
+        "path": EVIDENCE_MD,
+    }
+
+
+def rebuild_evidence_markdown() -> dict[str, object]:
+    with operation_lock("evidence", "records", timeout=MUTATION_LOCK_TIMEOUT_SECONDS):
+        records = _load_records()
+        path = write_text(EVIDENCE_MD, evidence_markdown(records))
+        log_event("evidence.markdown.rebuilt", record_count=len(records))
+        return {"path": str(path), "record_count": len(records), "status": "rebuilt"}
 
 
 def evidence_summary(max_records: int = 8) -> str:
@@ -313,11 +447,37 @@ def evidence_summary(max_records: int = 8) -> str:
     return "\n".join(lines)
 
 
-def evidence_status(min_records: int = 1) -> tuple[bool, list[str]]:
-    records = _load_records()
+def evidence_policy_report() -> dict[str, object]:
+    try:
+        records = _load_records()
+        derivative = evidence_derivative_report(records)
+        gaps = evidence_gap_counts()
+        report = evaluate_evidence_policy(
+            records,
+            planned_searches=gaps["planned"],
+            covered_searches=gaps["covered"],
+        )
+        claims = claim_policy_report()
+    except ValueError as exc:
+        return {
+            "valid": False,
+            "issues": [str(exc)],
+            "claims": {"valid": False, "issues": []},
+            "derivative": {"valid": False, "status": "unavailable", "issues": []},
+        }
+    report["claims"] = claims
+    report["derivative"] = derivative
+    report["issues"] = [*report["issues"], *claims["issues"], *derivative["issues"]]
+    report["valid"] = bool(report["valid"] and claims["valid"] and derivative["valid"])
+    return report
+
+
+def evidence_status(min_records: int | None = None) -> tuple[bool, list[str]]:
+    try:
+        records = _load_records()
+    except ValueError as exc:
+        return False, [str(exc)]
     issues: list[str] = []
-    if len(records) < min_records:
-        issues.append(f"at least {min_records} structured evidence record(s) required")
     for index, record in enumerate(records, start=1):
         missing = [field for field in REQUIRED_FIELDS if not str(record.get(field, "") or "").strip()]
         if missing:
@@ -325,6 +485,21 @@ def evidence_status(min_records: int = 1) -> tuple[bool, list[str]]:
         url = str(record.get("url", "") or "")
         if url and urlparse(url).scheme not in {"http", "https", "file"}:
             issues.append(f"evidence #{index} has invalid url: {url}")
+    try:
+        gaps = evidence_gap_counts()
+        policy_result = evaluate_evidence_policy(
+            records,
+            planned_searches=gaps["planned"],
+            covered_searches=gaps["covered"],
+            min_records_override=min_records,
+        )
+        claims = claim_policy_report()
+        derivative = evidence_derivative_report(records)
+    except ValueError as exc:
+        return False, [*issues, str(exc)]
+    issues.extend(str(item) for item in policy_result["issues"])
+    issues.extend(str(item) for item in claims["issues"])
+    issues.extend(str(item) for item in derivative["issues"])
     return not issues, issues
 
 
@@ -332,7 +507,11 @@ def decision_references_evidence() -> bool:
     text = read_text("docs/03-decision-record.md", "")
     if not text.strip():
         return False
-    urls = [re.escape(str(record.get("url", "") or "")) for record in _load_records() if record.get("url")]
+    try:
+        records = _load_records()
+    except ValueError:
+        return False
+    urls = [re.escape(str(record.get("url", "") or "")) for record in records if record.get("url")]
     if urls and any(re.search(url, text) for url in urls):
         return True
     evidence_section = text.split("## Evidence Used", 1)

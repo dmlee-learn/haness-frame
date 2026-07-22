@@ -23,7 +23,17 @@ python app.py pack --role planner
 python app.py render
 python app.py invoke --role planner --prompt "Summarize the project state"
 python app.py pipeline --prompt "Draft a first-pass design plan"
+./run.ps1 implement --task "Implement the approved change"
+./run.ps1 finish
 ```
+
+After the decision gate and verification policy are ready,
+`./run.ps1 implement --task "..."` asks the coder for a patch, repairs malformed
+diff hunk counts, validates and applies it, runs the approved tests, rolls back
+on failure, and finishes the qualified archive on success.
+
+After implementation, `./run.ps1 finish` validates the approved commands,
+runs qualification, creates an archive, and verifies its integrity.
 
 ## Workflow
 

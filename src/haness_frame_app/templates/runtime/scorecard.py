@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 
-from .storage import read_text, write_text
+from .storage import load_json_object, update_json_object, write_text
 
 SCORECARD = "workspace/scorecard.json"
 
@@ -13,12 +13,32 @@ def _now() -> str:
 
 
 def load_scorecard() -> dict[str, object]:
-    payload = read_text(SCORECARD, "{}")
+    return load_json_object(SCORECARD)
+
+
+def scorecard_check() -> dict[str, object]:
     try:
-        scorecard = json.loads(payload)
-    except json.JSONDecodeError:
-        return {}
-    return scorecard if isinstance(scorecard, dict) else {}
+        scorecard = load_scorecard()
+    except ValueError as exc:
+        return {"valid": False, "status": "invalid", "issues": [str(exc)], "check_count": 0}
+    issues: list[str] = []
+    checks = scorecard.get("checks", {})
+    details = scorecard.get("details", {})
+    if not isinstance(checks, dict):
+        issues.append("workspace/scorecard.json checks must be a JSON object")
+        checks = {}
+    else:
+        invalid_checks = sorted(str(name) for name, passed in checks.items() if not isinstance(passed, bool))
+        if invalid_checks:
+            issues.append("workspace/scorecard.json checks must contain boolean values: " + ", ".join(invalid_checks))
+    if not isinstance(details, dict):
+        issues.append("workspace/scorecard.json details must be a JSON object")
+    return {
+        "valid": not issues,
+        "status": "valid" if not issues else "invalid",
+        "issues": issues,
+        "check_count": len(checks),
+    }
 
 
 def save_scorecard(scorecard: dict[str, object]) -> dict[str, object]:
@@ -28,16 +48,18 @@ def save_scorecard(scorecard: dict[str, object]) -> dict[str, object]:
 
 
 def mark_check(name: str, passed: bool, detail: str = "") -> dict[str, object]:
-    scorecard = load_scorecard()
-    checks = scorecard.setdefault("checks", {})
-    if not isinstance(checks, dict):
-        checks = {}
-        scorecard["checks"] = checks
-    checks[name] = bool(passed)
-    details = scorecard.setdefault("details", {})
-    if isinstance(details, dict) and detail:
-        details[name] = detail
-    return save_scorecard(scorecard)
+    def mutate(scorecard: dict[str, object]) -> None:
+        checks = scorecard.setdefault("checks", {})
+        if not isinstance(checks, dict):
+            checks = {}
+            scorecard["checks"] = checks
+        checks[name] = bool(passed)
+        details = scorecard.setdefault("details", {})
+        if isinstance(details, dict) and detail:
+            details[name] = detail
+        scorecard["last_updated_at"] = _now()
+
+    return update_json_object(SCORECARD, mutate)
 
 
 def update_runtime_scorecard(
@@ -49,18 +71,20 @@ def update_runtime_scorecard(
     missing_docs: list[str],
     gate_issues: list[str],
 ) -> dict[str, object]:
-    scorecard = load_scorecard()
-    checks = scorecard.setdefault("checks", {})
-    if not isinstance(checks, dict):
-        checks = {}
-        scorecard["checks"] = checks
-    checks["status"] = status_ok
-    checks["next"] = next_ok
-    checks["evidence"] = evidence_ok
-    checks["decision_gate"] = decision_gate_allowed
-    scorecard["status"] = "ready_for_implementation" if decision_gate_allowed else "in_progress"
-    scorecard["open_issues"] = list(missing_docs) + list(gate_issues)
-    return save_scorecard(scorecard)
+    def mutate(scorecard: dict[str, object]) -> None:
+        checks = scorecard.setdefault("checks", {})
+        if not isinstance(checks, dict):
+            checks = {}
+            scorecard["checks"] = checks
+        checks["status"] = status_ok
+        checks["next"] = next_ok
+        checks["evidence"] = evidence_ok
+        checks["decision_gate"] = decision_gate_allowed
+        scorecard["status"] = "ready_for_implementation" if decision_gate_allowed else "in_progress"
+        scorecard["open_issues"] = list(missing_docs) + list(gate_issues)
+        scorecard["last_updated_at"] = _now()
+
+    return update_json_object(SCORECARD, mutate)
 
 
 def scorecard_report() -> str:

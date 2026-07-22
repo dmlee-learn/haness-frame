@@ -1,4 +1,4 @@
-ROLE_ORDER = ["project_scout", "context_curator", "researcher", "planner", "designer", "architect", "critic", "decision_maker", "coder", "reviewer", "escalation"]
+ROLE_ORDER = ["project_scout", "context_curator", "researcher", "planner", "designer", "architect", "critic", "debugger", "decision_maker", "coder", "reviewer", "escalation"]
 
 ROLE_SUMMARIES = {
     "project_scout": "Searches for related systems, alternatives, and failure modes.",
@@ -8,6 +8,7 @@ ROLE_SUMMARIES = {
     "designer": "Defines user flows and interaction constraints.",
     "architect": "Checks boundaries, data flow, and operational fit.",
     "critic": "Challenges assumptions and missing tests.",
+    "debugger": "Diagnoses failed verification and identifies the smallest relevant file set.",
     "decision_maker": "Chooses the accepted option and the implementation brief.",
     "coder": "Implements the accepted plan.",
     "reviewer": "Validates the implementation result.",

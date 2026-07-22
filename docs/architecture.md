@@ -1,5 +1,41 @@
 # Harness Architecture
 
+## Product Purpose
+
+The harness helps people using local AI create reliable, working programs with
+a strong but approachable engineering workflow. It coordinates specialized AI
+roles, evidence-backed decisions, implementation, executable verification, and
+bounded repair attempts. Local services remain the default and cloud escalation
+is optional.
+
+## Design Invariants
+
+```text
+- No coding role runs before the evidence and decision gate passes.
+- A role may not approve its own implementation without independent review.
+- Every accepted implementation brief includes executable verification commands.
+- Every repair attempt is bounded, logged, and based on the latest failure.
+- User changes outside the accepted implementation scope are preserved.
+- Interrupted work can be inspected and resumed from recorded state.
+- Role pipelines isolate each run and never repeat a completed role during resume.
+```
+
+## Automated Repair Contract
+
+```text
+1. Run policy-approved verification commands.
+2. Ask debugger for JSON diagnosis and relevant project-relative files.
+3. Load only files allowed by repair-policy context limits.
+4. Ask coder for exactly one unified diff.
+5. Validate and apply the patch with backups.
+6. Re-run verification.
+7. Ask an independent reviewer for a JSON verdict.
+8. Keep an approved patch or rollback and retry within the attempt budget.
+```
+
+Invalid AI response formats, unsafe paths, patch context mismatches, failed
+tests, and reviewer rejection cannot produce an approved session.
+
 ## Roles
 
 ### Planner / Reviewer
